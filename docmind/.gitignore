@@ -3,17 +3,13 @@
 Thumbs.db
 
 # Backend
-backend/venv*/
+backend/venv/
 backend/__pycache__/
 backend/*.pyc
 backend/*.db
 backend/.env
 backend/uploads/
 backend/chroma_db/
-backend/venv_new/
-backend/venv/
-backend/venv_old/
-
 
 # Frontend
 frontend/node_modules/
@@ -27,30 +23,3 @@ frontend/.env.local
 _agents/
 _agent/
 .gemini/
-
-## Python
-__pycache__/
-*.py[cod]
-*.pyd
-.Python
-.pytest_cache/
-
-## Virtualenvs
-venv/
-.venv/
-
-## Node
-node_modules/
-dist/
-
-## Env/secrets
-.env
-.env.*
-
-## App runtime artifacts
-uploads/
-chroma_db/
-*.db
-
-## OS/editor
-.vscode/
