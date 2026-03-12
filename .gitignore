@@ -1,0 +1,29 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Backend
+backend/venv*/
+backend/__pycache__/
+backend/*.pyc
+backend/*.db
+backend/.env
+backend/uploads/
+backend/chroma_db/
+backend/venv_new/
+backend/venv/
+backend/venv_old/
+
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# AI/Assistant
+.agents/
+.agent/
+_agents/
+_agent/
+.gemini/
