@@ -19,13 +19,11 @@ DocMind is a unified document intelligence platform that leverages AI to analyze
 
 ## 📺 Demo
 
-> [!IMPORTANT]
-> **Action Required**: Upload your walkthrough video to YouTube (set to "Unlisted" or "Public"). 
-> Once uploaded, replace `YOUR_VIDEO_ID` in the link below!
-
 <div align="center">
   <a href="https://youtu.be/lHGxaPUmmMU">
-    <img src="https://youtu.be/lHGxaPUmmMU/maxresdefault.jpg" alt="DocMind Feature Demo" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+    <img src="https://img.youtube.com/vi/lHGxaPUmmMU/maxresdefault.jpg" 
+         alt="DocMind Feature Demo" 
+         width="700">
   </a>
   <p><i>Click to watch the DocMind platform walkthrough</i></p>
 </div>
