@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const apiBaseUrl = import.meta.env?.VITE_API_BASE_URL || '/api'
+
 const client = axios.create({
-    baseURL: '/api',
+    baseURL: apiBaseUrl,
     timeout: 120_000, // 2 min for long AI operations
     headers: {
         'Content-Type': 'application/json',
