@@ -24,8 +24,8 @@ DocMind is a unified document intelligence platform that leverages AI to analyze
 > Once uploaded, replace `YOUR_VIDEO_ID` in the link below!
 
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=YOUR_VIDEO_ID">
-    <img src="https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg" alt="DocMind Feature Demo" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+  <a href="https://youtu.be/lHGxaPUmmMU">
+    <img src="https://youtu.be/lHGxaPUmmMU/maxresdefault.jpg" alt="DocMind Feature Demo" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
   </a>
   <p><i>Click to watch the DocMind platform walkthrough</i></p>
 </div>
