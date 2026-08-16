@@ -1,9 +1,7 @@
 import logging
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 from typing import List, Optional
 from pydantic import BaseModel
 
@@ -24,7 +22,7 @@ class QueryRequest(BaseModel):
 async def upload_research_papers(
     files: List[UploadFile] = File(...),
     topic_description: Optional[str] = Form(None),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Accept 1–15 PDFs. Create a research session, extract text, return session_id."""
     if len(files) < 1 or len(files) > 15:
@@ -38,8 +36,8 @@ async def upload_research_papers(
         status="pending",
     )
     db.add(session)
-    await db.flush()
-    await db.refresh(session)
+    db.commit()
+    db.refresh(session)
 
     paper_list = []
     for file in files:
@@ -61,7 +59,7 @@ async def upload_research_papers(
         db.add(paper)
         paper_list.append({"filename": file.filename, "page_count": extracted["total_pages"]})
 
-    await db.flush()
+    db.commit()
     return {
         "status": "pending",
         "session_id": session_id,
@@ -71,14 +69,14 @@ async def upload_research_papers(
 
 
 @router.get("/session/{session_id}")
-async def get_session(session_id: str, db: AsyncSession = Depends(get_db)):
+def get_session(session_id: str, db: Session = Depends(get_db)):
     """Get session status and list of uploaded papers."""
-    result = await db.execute(
-        select(ResearchSession)
-        .where(ResearchSession.session_id == session_id)
+    session = (
+        db.query(ResearchSession)
+        .filter(ResearchSession.session_id == session_id)
         .options(selectinload(ResearchSession.papers))
+        .first()
     )
-    session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     return {
@@ -94,12 +92,9 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/synthesize/{session_id}")
-async def synthesize(session_id: str, db: AsyncSession = Depends(get_db)):
+async def synthesize(session_id: str, db: Session = Depends(get_db)):
     """Trigger the full 6-step research synthesis pipeline."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session.status == "complete":
@@ -107,26 +102,22 @@ async def synthesize(session_id: str, db: AsyncSession = Depends(get_db)):
 
     try:
         await research_pipeline.run_synthesis(session.id, db)
+        db.commit()
         return {"status": "complete", "session_id": session_id}
     except Exception as e:
         logger.error(f"Synthesis error for session {session_id}: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {e}")
 
 
 @router.get("/review/{session_id}")
-async def get_review(session_id: str, db: AsyncSession = Depends(get_db)):
+def get_review(session_id: str, db: Session = Depends(get_db)):
     """Return the generated literature review."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    review_result = await db.execute(
-        select(LiteratureReview).where(LiteratureReview.session_id == session.id)
-    )
-    review = review_result.scalar_one_or_none()
+    review = db.query(LiteratureReview).filter(LiteratureReview.session_id == session.id).first()
     if not review:
         raise HTTPException(status_code=404, detail="Literature review not yet generated.")
     return {
@@ -138,19 +129,13 @@ async def get_review(session_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/contradictions/{session_id}")
-async def get_contradictions(session_id: str, db: AsyncSession = Depends(get_db)):
+def get_contradictions(session_id: str, db: Session = Depends(get_db)):
     """Return all detected contradiction pairs."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    insights_result = await db.execute(
-        select(Insight).where(Insight.session_id == session.id, Insight.type == "contradiction")
-    )
-    contradictions = insights_result.scalars().all()
+    contradictions = db.query(Insight).filter(Insight.session_id == session.id, Insight.type == "contradiction").all()
     return {
         "status": "complete",
         "count": len(contradictions),
@@ -169,19 +154,13 @@ async def get_contradictions(session_id: str, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/gaps/{session_id}")
-async def get_gaps(session_id: str, db: AsyncSession = Depends(get_db)):
+def get_gaps(session_id: str, db: Session = Depends(get_db)):
     """Return research gap analysis."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    gaps_result = await db.execute(
-        select(Insight).where(Insight.session_id == session.id, Insight.type == "gap")
-    )
-    gaps = gaps_result.scalars().all()
+    gaps = db.query(Insight).filter(Insight.session_id == session.id, Insight.type == "gap").all()
     return {
         "status": "complete",
         "count": len(gaps),
@@ -198,7 +177,7 @@ async def get_gaps(session_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/query/{session_id}")
-async def rag_query(session_id: str, body: QueryRequest, db: AsyncSession = Depends(get_db)):
+async def rag_query(session_id: str, body: QueryRequest, db: Session = Depends(get_db)):
     """RAG Chat: question → top-5 chunks → Claude answer + citations."""
     try:
         response = await research_pipeline.run_rag_query(session_id, body.question, db)
@@ -210,16 +189,14 @@ async def rag_query(session_id: str, body: QueryRequest, db: AsyncSession = Depe
 
 
 @router.delete("/session/{session_id}")
-async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)):
+def delete_session(session_id: str, db: Session = Depends(get_db)):
     """Delete session, papers, insights, and ChromaDB collection."""
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
     collection_name = f"research_{session.session_id}"
     delete_collection(collection_name)
-    await db.delete(session)
+    db.delete(session)
+    db.commit()
     return {"status": "deleted", "session_id": session_id}

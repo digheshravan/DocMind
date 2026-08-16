@@ -2,8 +2,8 @@ import os
 import shutil
 import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.database import get_db
 from app.models.document import Document
@@ -22,7 +22,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Upload a PDF, extract text, store in DB, return document_id."""
     if not file.filename.lower().endswith(".pdf"):
@@ -42,7 +42,8 @@ async def upload_document(
     try:
         extracted = pdf_parser.extract_text(file_bytes, file.filename)
     except Exception as e:
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {e}")
 
     # Save to database
@@ -54,8 +55,8 @@ async def upload_document(
         status="complete",
     )
     db.add(doc)
-    await db.flush()
-    await db.refresh(doc)
+    db.commit()
+    db.refresh(doc)
 
     return {
         "status": "complete",
@@ -67,10 +68,9 @@ async def upload_document(
 
 
 @router.get("/documents/{doc_id}")
-async def get_document(doc_id: int, db: AsyncSession = Depends(get_db)):
+def get_document(doc_id: int, db: Session = Depends(get_db)):
     """Get document metadata and status."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
-    doc = result.scalar_one_or_none()
+    doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
     return {
@@ -83,14 +83,14 @@ async def get_document(doc_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+def health_check(db: Session = Depends(get_db)):
     """Ping DB, ChromaDB, and verify settings."""
     db_status = "error"
     chroma_status = "error"
     claude_status = "configured" if settings.groq_api_key else "missing"
 
     try:
-        await db.execute(text("SELECT 1"))
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {e}"

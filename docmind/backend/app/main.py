@@ -12,7 +12,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await init_db()
+    init_db()
     yield
     # Shutdown (nothing special needed)
 
@@ -45,3 +45,8 @@ app.include_router(history.router, prefix="/api")
 @app.get("/")
 async def root():
     return {"message": "DocMind API is running", "docs": "/docs"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8080)

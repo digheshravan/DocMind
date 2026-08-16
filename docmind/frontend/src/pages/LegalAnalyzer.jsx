@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge'
 import ErrorBoundary from '../components/ErrorBoundary'
 import client from '../api/client'
 import { useAppContext } from '../context/AppContext'
+import ChatSidebar from '../components/ChatSidebar'
 
 const LEGAL_STEPS = ['Uploading & parsing PDF', 'Extracting clauses', 'Classifying risk (parallel)', 'Generating summary']
 
@@ -190,10 +191,10 @@ export default function LegalAnalyzer() {
         ? (riskFilter === 'ALL' ? analysis.clauses : analysis.clauses.filter(c => c.risk_level === riskFilter))
         : []
 
-    const totalClauses = analysis?.clauses.length || 0
+    const totalClauses = (analysis?.clauses || []).length
     const chartData = analysis
         ? ['HIGH', 'MEDIUM', 'LOW'].map(l => {
-            const count = analysis.clauses.filter(c => c.risk_level === l).length
+            const count = (analysis.clauses || []).filter(c => c.risk_level === l).length
             return {
                 name: l,
                 count: count,
@@ -261,132 +262,150 @@ export default function LegalAnalyzer() {
 
     return (
         <ErrorBoundary>
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8 fade-in-up">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Scale className="w-6 h-6 text-red-400" />
-                        <h1 className="text-xl font-bold text-slate-100">Legal Analysis Results</h1>
-                    </div>
-                    <button onClick={handleReset} className="btn-secondary text-sm py-2">
-                        ← Analyze Another
-                    </button>
-                </div>
+            <div className="h-[calc(100vh-4rem)] flex overflow-hidden relative">
+                {/* Section D: RAG Chat Sidebar (Left) */}
+                {analysis && (
+                    <ChatSidebar
+                        id={analysis.analysis_id}
+                        type="legal"
+                        isExpanded={legalState.isChatExpanded}
+                        setIsExpanded={(e) => setLegalState(s => ({ ...s, isChatExpanded: typeof e === 'function' ? e(s.isChatExpanded) : e }))}
+                        messages={legalState.chatMessages}
+                        setMessages={(m) => setLegalState(s => ({ ...s, chatMessages: typeof m === 'function' ? m(s.chatMessages) : m }))}
+                        placeholder="Ask about this document..."
+                    />
+                )}
 
-                {/* Section A: Risk Dashboard */}
-                <div className="glass-card">
-                    <h2 className="section-header flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-red-400" /> Risk Dashboard</h2>
-                    <div className="grid md:grid-cols-2 gap-8 items-start">
-                        <div className="flex flex-col items-center">
-                            <RiskGauge score={analysis.overall_risk_score} />
-                            <p className="text-slate-400 text-sm mt-3 text-center max-w-xs">{analysis.summary_text?.split('\n')[0]}</p>
+                {/* Main Content Area (Right) */}
+                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8 fade-in-up">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Scale className="w-6 h-6 text-red-400" />
+                                <h1 className="text-xl font-bold text-slate-100">Legal Analysis Results</h1>
+                            </div>
+                            <button onClick={handleReset} className="btn-secondary text-sm py-2">
+                                ← Analyze Another
+                            </button>
                         </div>
-                        <div className="space-y-4">
-                            <div className="h-60 relative bg-gradient-to-br from-slate-900/90 to-slate-950 border border-slate-700/50 rounded-2xl p-5 shadow-xl">
-                                <div className="absolute top-4 left-5 flex items-center gap-2.5">
-                                    <div className="w-2 h-2 rounded-full bg-brand-500 shadow-[0_0_8px_rgba(139,92,246,0.8)] animate-pulse" />
-                                    <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Risk Distribution</p>
+
+                        {/* Section A: Risk Dashboard */}
+                        <div className="glass-card">
+                            <h2 className="section-header flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-red-400" /> Risk Dashboard</h2>
+                            <div className="grid md:grid-cols-2 gap-8 items-start">
+                                <div className="flex flex-col items-center">
+                                    <RiskGauge score={analysis.overall_risk_score} />
+                                    <p className="text-slate-400 text-sm mt-3 text-center max-w-xs">{analysis.summary_text?.split('\n')[0]}</p>
                                 </div>
-                                <div className="mt-8 h-[80%]">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -25 }}>
-                                            <defs>
-                                                <linearGradient id="colorHIGH" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.9} />
-                                                    <stop offset="95%" stopColor="#991b1b" stopOpacity={0.9} />
-                                                </linearGradient>
-                                                <linearGradient id="colorMEDIUM" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.9} />
-                                                    <stop offset="95%" stopColor="#b45309" stopOpacity={0.9} />
-                                                </linearGradient>
-                                                <linearGradient id="colorLOW" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#eab308" stopOpacity={0.9} />
-                                                    <stop offset="95%" stopColor="#a16207" stopOpacity={0.9} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.3} />
-                                            <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} dy={8} />
-                                            <YAxis tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} allowDecimals={false} dx={-5} />
-                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: '#cbd5e1', opacity: 0.05 }} />
-                                            <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} className="hover:filter hover:brightness-125 transition-all duration-300 cursor-pointer">
-                                                {chartData.map((d, i) => <Cell key={i} fill={`url(#color${d.name})`} />)}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
+                                <div className="space-y-4">
+                                    <div className="h-60 relative bg-gradient-to-br from-slate-900/90 to-slate-950 border border-slate-700/50 rounded-2xl p-5 shadow-xl">
+                                        <div className="absolute top-4 left-5 flex items-center gap-2.5">
+                                            <div className="w-2 h-2 rounded-full bg-brand-500 shadow-[0_0_8px_rgba(139,92,246,0.8)] animate-pulse" />
+                                            <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Risk Distribution</p>
+                                        </div>
+                                        <div className="mt-8 h-[80%]">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -25 }}>
+                                                    <defs>
+                                                        <linearGradient id="colorHIGH" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.9} />
+                                                            <stop offset="95%" stopColor="#991b1b" stopOpacity={0.9} />
+                                                        </linearGradient>
+                                                        <linearGradient id="colorMEDIUM" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.9} />
+                                                            <stop offset="95%" stopColor="#b45309" stopOpacity={0.9} />
+                                                        </linearGradient>
+                                                        <linearGradient id="colorLOW" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#eab308" stopOpacity={0.9} />
+                                                            <stop offset="95%" stopColor="#a16207" stopOpacity={0.9} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.3} />
+                                                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} dy={8} />
+                                                    <YAxis tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} allowDecimals={false} dx={-5} />
+                                                    <Tooltip content={<CustomTooltip />} cursor={{ fill: '#cbd5e1', opacity: 0.05 }} />
+                                                    <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} className="hover:filter hover:brightness-125 transition-all duration-300 cursor-pointer">
+                                                        {chartData.map((d, i) => <Cell key={i} fill={`url(#color${d.name})`} />)}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                    {/* Red flags */}
+                                    {analysis.red_flags?.length > 0 && (
+                                        <div>
+                                            <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3" /> Top Red Flags
+                                            </p>
+                                            <ul className="space-y-1">
+                                                {analysis.red_flags.map((flag, i) => (
+                                                    <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                                                        <span className="text-red-400 mt-0.5">•</span>{flag}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {/* Missing protections */}
+                                    {analysis.missing_protections?.length > 0 && (
+                                        <div>
+                                            <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                                                <TrendingDown className="w-3 h-3" /> Missing Protections
+                                            </p>
+                                            <ul className="space-y-1">
+                                                {analysis.missing_protections.map((p, i) => (
+                                                    <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                                                        <span className="text-amber-400 mt-0.5">○</span>{p}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                            {/* Red flags */}
-                            {analysis.red_flags?.length > 0 && (
-                                <div>
-                                    <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                                        <AlertTriangle className="w-3 h-3" /> Top Red Flags
-                                    </p>
-                                    <ul className="space-y-1">
-                                        {analysis.red_flags.map((flag, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                                                <span className="text-red-400 mt-0.5">•</span>{flag}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            {/* Missing protections */}
-                            {analysis.missing_protections?.length > 0 && (
-                                <div>
-                                    <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                                        <TrendingDown className="w-3 h-3" /> Missing Protections
-                                    </p>
-                                    <ul className="space-y-1">
-                                        {analysis.missing_protections.map((p, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                                                <span className="text-amber-400 mt-0.5">○</span>{p}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
                         </div>
+
+                        {/* Section B: Clause Explorer */}
+                        <div className="glass-card">
+                            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                                <h2 className="section-header flex items-center gap-2 mb-0"><Filter className="w-5 h-5 text-slate-400" /> Clause Explorer</h2>
+                                <div className="flex gap-2 flex-wrap">
+                                    {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(level => (
+                                        <button
+                                            key={level}
+                                            onClick={() => setRiskFilter(level)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${riskFilter === level
+                                                ? 'bg-brand-600 border-brand-500 text-white'
+                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                                                }`}
+                                        >
+                                            {level} {level !== 'ALL' && `(${analysis.clauses.filter(c => c.risk_level === level).length})`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                {filtered.length === 0
+                                    ? <p className="text-slate-500 text-center py-8">No clauses match this filter.</p>
+                                    : filtered.map(c => <ClauseCard key={c.id} clause={c} />)
+                                }
+                            </div>
+                        </div>
+
+                        {/* Section C: Document Summary */}
+                        {analysis.summary_text && (
+                            <div className="glass-card">
+                                <h2 className="section-header flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-400" /> Document Summary</h2>
+                                <div className="text-slate-300 leading-relaxed space-y-4">
+                                    {analysis.summary_text.split('\n\n').map((para, i) => (
+                                        <p key={i}>{para}</p>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
-
-                {/* Section B: Clause Explorer */}
-                <div className="glass-card">
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                        <h2 className="section-header flex items-center gap-2 mb-0"><Filter className="w-5 h-5 text-slate-400" /> Clause Explorer</h2>
-                        <div className="flex gap-2 flex-wrap">
-                            {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(level => (
-                                <button
-                                    key={level}
-                                    onClick={() => setRiskFilter(level)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 ${riskFilter === level
-                                        ? 'bg-brand-600 border-brand-500 text-white'
-                                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
-                                        }`}
-                                >
-                                    {level} {level !== 'ALL' && `(${analysis.clauses.filter(c => c.risk_level === level).length})`}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="space-y-3">
-                        {filtered.length === 0
-                            ? <p className="text-slate-500 text-center py-8">No clauses match this filter.</p>
-                            : filtered.map(c => <ClauseCard key={c.id} clause={c} />)
-                        }
-                    </div>
-                </div>
-
-                {/* Section C: Document Summary */}
-                {analysis.summary_text && (
-                    <div className="glass-card">
-                        <h2 className="section-header flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-400" /> Document Summary</h2>
-                        <div className="text-slate-300 leading-relaxed space-y-4">
-                            {analysis.summary_text.split('\n\n').map((para, i) => (
-                                <p key={i}>{para}</p>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
         </ErrorBoundary>
     )

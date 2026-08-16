@@ -10,17 +10,26 @@ settings = get_settings()
 # Persistent ChromaDB client
 _chroma_client = chromadb.PersistentClient(path=settings.chroma_path)
 
-# Local sentence-transformers embeddings (no API cost)
-_embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
-)
+# Lazy loading of sentence-transformers embeddings
+_embedding_fn = None
+
+
+def get_embedding_fn():
+    """Lazily initialize the embedding function."""
+    global _embedding_fn
+    if _embedding_fn is None:
+        logger.info("Initializing SentenceTransformerEmbeddingFunction (this may take a moment on first run)...")
+        _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+    return _embedding_fn
 
 
 def get_or_create_collection(name: str) -> chromadb.Collection:
     """Get or create a ChromaDB collection with local embeddings."""
     return _chroma_client.get_or_create_collection(
         name=name,
-        embedding_function=_embedding_fn,
+        embedding_function=get_embedding_fn(),
         metadata={"hnsw:space": "cosine"},
     )
 

@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import LegalAnalyzer from './pages/LegalAnalyzer'
 import ResearchSynth from './pages/ResearchSynth'
 import History from './pages/History'
+import ComparisonResults from './pages/ComparisonResults'
 import NotFound from './pages/NotFound'
 import { AppProvider } from './context/AppContext'
 
@@ -18,6 +19,7 @@ export default function App() {
                     <Routes>
                         <Route path="/" element={<Home />} />
                         <Route path="/legal" element={<LegalAnalyzer />} />
+                        <Route path="/legal/compare" element={<ComparisonResults />} />
                         <Route path="/research" element={<ResearchSynth />} />
                         <Route path="/history" element={<History />} />
                         <Route path="*" element={<NotFound />} />

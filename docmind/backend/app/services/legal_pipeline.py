@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from typing import List, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.services import claude_service
+from app.services import claude_service, vector_store
 from app.models.legal import LegalAnalysis, ClauseRisk
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,12 @@ Return exactly:
 }
 overall_risk_score must be an integer from 0 (no risk) to 100 (extremely risky)."""
 
+RAG_CHAT_SYSTEM = """You are an expert legal assistant. 
+Your goal is to answer questions about a legal document based ONLY on the provided excerpts.
+If the answer is not in the excerpts, state that you cannot find the information in the current document.
+Be professional, precise, and cite clause titles where applicable.
+"""
+
 
 async def _classify_clause(clause: Dict[str, Any]) -> Dict[str, Any]:
     """Classify a single clause's risk. Called in parallel via asyncio.gather."""
@@ -62,7 +68,7 @@ async def _classify_clause(clause: Dict[str, Any]) -> Dict[str, Any]:
 async def run(
     document_text: str,
     analysis_id: int,
-    db: AsyncSession,
+    db: Session,
 ) -> Dict[str, Any]:
     """
     Run the 3-step legal analysis pipeline.
@@ -70,7 +76,7 @@ async def run(
     Step 2: Classify all clauses in PARALLEL (asyncio.gather)
     Step 3: Generate document summary + risk score
     """
-    analysis = await db.get(LegalAnalysis, analysis_id)
+    analysis = db.get(LegalAnalysis, analysis_id)
 
     # ── Step 1: Clause Extraction ──────────────────────────────────────────
     logger.info(f"[Legal Pipeline] Step 1: Extracting clauses for analysis {analysis_id}")
@@ -91,7 +97,6 @@ async def run(
     classified = await asyncio.gather(*[_classify_clause(c) for c in clauses])
 
     # Save clauses to DB
-    risk_level_weights = {"HIGH": 100, "MEDIUM": 50, "LOW": 20}
     for c in classified:
         clause_row = ClauseRisk(
             analysis_id=analysis_id,
@@ -105,7 +110,7 @@ async def run(
             page_ref=c.get("page_ref"),
         )
         db.add(clause_row)
-    await db.flush()
+    db.flush()
 
     # ── Step 3: Document Summary ───────────────────────────────────────────
     logger.info(f"[Legal Pipeline] Step 3: Generating document summary")
@@ -134,7 +139,26 @@ async def run(
     analysis.red_flags = summary_data.get("top_3_red_flags", [])
     analysis.missing_protections = summary_data.get("missing_protections", [])
     analysis.status = "complete"
-    await db.flush()
+    db.flush()
+
+    # ── Step 4: Vector Ingestion for RAG ────────────────────────────────
+    logger.info(f"[Legal Pipeline] Step 4: Chunking & Embedding full text")
+    # Simple chunking by paragraph/length
+    paragraphs = [p.strip() for p in document_text.split('\n\n') if len(p.strip()) > 50]
+    chunks = []
+    current_chunk = ""
+    for p in paragraphs:
+        if len(current_chunk) + len(p) < 2000:
+            current_chunk += "\n\n" + p
+        else:
+            chunks.append(current_chunk.strip())
+            current_chunk = p
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    metadatas = [{"analysis_id": analysis_id, "doc_id": analysis.document_id} for _ in chunks]
+    collection_name = f"legal_analysis_{analysis_id}"
+    vector_store.add_chunks(collection_name, chunks, metadatas)
 
     logger.info(f"[Legal Pipeline] Complete. Score: {overall_score}")
     return {
@@ -143,4 +167,26 @@ async def run(
         "red_flags": analysis.red_flags,
         "missing_protections": analysis.missing_protections,
         "clause_count": len(classified),
+    }
+
+async def run_legal_query(analysis_id: int, question: str, db: Session) -> Dict[str, Any]:
+    """Perform RAG query against a legal document's vector embeddings."""
+    collection_name = f"legal_analysis_{analysis_id}"
+    
+    context_results = vector_store.query(collection_name, question, n_results=5)
+    context_text = "\n\n---\n\n".join([r['text'] for r in context_results])
+    
+    if not context_text:
+        return {"answer": "I don't have enough context from this document to answer that question accurately.", "citations": []}
+
+    prompt = (
+        f"USER QUESTION: {question}\n\n"
+        f"DOCUMENT EXCERPTS:\n{context_text}"
+    )
+    
+    answer = await claude_service.analyze(RAG_CHAT_SYSTEM, prompt, max_tokens=1024)
+    
+    return {
+        "answer": answer,
+        "citations": [r['metadata'] for r in context_results]
     }

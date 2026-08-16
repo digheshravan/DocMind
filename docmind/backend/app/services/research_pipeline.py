@@ -2,8 +2,7 @@ import asyncio
 import logging
 import uuid
 from typing import List, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.services import claude_service, vector_store, pdf_parser
 from app.models.research import ResearchSession, Paper, LiteratureReview, Insight
@@ -76,17 +75,18 @@ async def _extract_paper_metadata(paper_text: str, filename: str) -> Dict[str, A
         return {"title": filename, "authors": "Unknown", "abstract": snippet[:200]}
 
 
-async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
+async def run_synthesis(session_db_id: int, db: Session) -> None:
     """
     Run the 6-step research synthesis pipeline.
     """
-    session = await db.get(ResearchSession, session_db_id)
+    session = db.get(ResearchSession, session_db_id)
+    if not session:
+        return
     session.status = "processing"
-    await db.flush()
+    db.flush()
 
     # Load all papers
-    result = await db.execute(select(Paper).where(Paper.session_id == session_db_id))
-    papers: List[Paper] = list(result.scalars().all())
+    papers = db.query(Paper).filter(Paper.session_id == session_db_id).all()
     collection_name = f"research_{session.session_id}"
 
     # ── Step 1: Chunk + Embed + Store ────────────────────────────────────
@@ -101,7 +101,7 @@ async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
         ]
         vector_store.add_chunks(collection_name, chunks, metadatas)
         paper.chroma_indexed = True
-    await db.flush()
+    db.flush()
 
     # ── Step 2: Metadata Extraction (parallel) ───────────────────────────
     logger.info(f"[Research Pipeline] Step 2: Extracting metadata")
@@ -114,7 +114,7 @@ async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
         paper.title = meta.get("title", paper.filename)
         paper.authors = meta.get("authors", "")
         paper.abstract = meta.get("abstract", "")
-    await db.flush()
+    db.flush()
 
     # ── Step 3: Literature Review ─────────────────────────────────────────
     logger.info(f"[Research Pipeline] Step 3: Generating literature review")
@@ -139,7 +139,7 @@ async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
         key_themes=review_data.get("key_themes", []),
     )
     db.add(lit_review)
-    await db.flush()
+    db.flush()
 
     # ── Step 4: Contradiction Detection (pairwise) ───────────────────────
     logger.info(f"[Research Pipeline] Step 4: Detecting contradictions")
@@ -170,7 +170,7 @@ async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
                         db.add(insight)
                 except Exception as e:
                     logger.warning(f"Contradiction check failed for papers {pa.id} vs {pb.id}: {e}")
-        await db.flush()
+        db.flush()
 
     # ── Step 5: Gap Mapping ───────────────────────────────────────────────
     logger.info(f"[Research Pipeline] Step 5: Gap mapping")
@@ -193,25 +193,22 @@ async def run_synthesis(session_db_id: int, db: AsyncSession) -> None:
                 db.add(g)
     except Exception as e:
         logger.error(f"Gap mapping failed: {e}")
-    await db.flush()
+    db.flush()
 
     session.status = "complete"
-    await db.flush()
+    db.flush()
     logger.info(f"[Research Pipeline] Complete for session {session.session_id}")
 
 
 async def run_rag_query(
     session_id_str: str,
     question: str,
-    db: AsyncSession,
+    db: Session,
 ) -> Dict[str, Any]:
     """
     Step 6: RAG Chat — query ChromaDB, build context, ask Claude, return answer + citations.
     """
-    result = await db.execute(
-        select(ResearchSession).where(ResearchSession.session_id == session_id_str)
-    )
-    session = result.scalar_one_or_none()
+    session = db.query(ResearchSession).filter(ResearchSession.session_id == session_id_str).first()
     if not session:
         raise ValueError(f"Session {session_id_str} not found")
 

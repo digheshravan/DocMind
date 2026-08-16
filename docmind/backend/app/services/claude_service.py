@@ -54,24 +54,47 @@ async def analyze(
     raise RuntimeError(f"Groq API failed after {retries} attempts: {last_error}")
 
 
+import re
+
+def _repair_json(text: str) -> str:
+    """Attempt to clean and repair common LLM JSON errors."""
+    # 1. Strip markdown code fences
+    text = text.strip()
+    if text.startswith("```"):
+        # Remove first line (fence) and last line (fence)
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    
+    # 2. Extract anything between the first { and last } or [ and ]
+    # This handles LLMs that add preamble/postamble
+    match = re.search(r'({.*}|\[.*\])', text, re.DOTALL)
+    if match:
+        text = match.group(1)
+    
+    return text
+
 async def analyze_json(
     system_prompt: str,
     user_content: str,
     max_tokens: int = 4096,
 ) -> Any:
     """
-    Calls Groq and parses the response as JSON.
-    Raises ValueError if JSON parsing fails.
+    Calls Groq and parses the response as JSON with multi-layer repair logic.
+    Raises ValueError if JSON parsing fails after all repairs.
     """
     raw = await analyze(system_prompt, user_content, max_tokens)
-    # Strip markdown code fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [l for l in lines if not l.startswith("```")]
-        text = "\n".join(lines).strip()
+    text = _repair_json(raw)
+    
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Groq response as JSON: {e}\nRaw: {raw[:500]}")
-        raise ValueError(f"Groq returned invalid JSON: {e}")
+        # Final attempt: just try to directly parse the raw content if repair failed
+        try:
+             return json.loads(raw.strip(), strict=False)
+        except:
+            logger.error(f"Failed to parse Groq response as JSON: {e}\nRaw (first 1000 chars): {raw[:1000]}")
+            raise ValueError(f"Groq returned invalid JSON: {e}")

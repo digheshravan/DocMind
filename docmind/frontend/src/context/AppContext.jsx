@@ -9,6 +9,8 @@ export function AppProvider({ children }) {
         analysis: null,
         riskFilter: 'ALL',
         step: 0,
+        isChatExpanded: false,
+        chatMessages: [{ role: 'assistant', content: "Hello! I've analyzed your document. You can ask me questions about specific clauses, liability, or termination terms.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }],
     })
 
     // Research Synth State
@@ -28,6 +30,8 @@ export function AppProvider({ children }) {
             analysis: null,
             riskFilter: 'ALL',
             step: 0,
+            isChatExpanded: false,
+            chatMessages: [{ role: 'assistant', content: "Hello! I've analyzed your document. You can ask me questions about specific clauses, liability, or termination terms.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }],
         })
         setResearchState({
             files: [],
